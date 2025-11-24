@@ -252,7 +252,7 @@ void showSettings(){
       case 6: lcd.print(" = to exit"); break;
     }
 
-    // Input warten
+    // await input
     delay(150);
     char key = 0;
     while(key == 0){
@@ -270,7 +270,7 @@ void showSettings(){
       if(option < 0) option = maxOption;
     }
 
-    // Toggle oder ändern
+    // Toggle or change
     if(key == '='){
       switch(option){
         case 0: whiteText = !whiteText; updateDisplay(); break;
@@ -283,7 +283,7 @@ void showSettings(){
       }
     }
 
-    // Exit mit C
+    // Exit with C
     if(key == 'C'){
       inMenu = false;
     }
