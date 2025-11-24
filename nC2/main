@@ -1,0 +1,104 @@
+// nC2
+
+#include <Keypad.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <math.h>
+
+// display
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// kexpad
+char keys[5][4] = {
+  {'1','2','3','+'},
+  {'4','5','6','-'},
+  {'7','8','9','*'},
+  {'C','0','=','/'},
+  {'s','c','t',''} // Sin, Cos, Tan
+};
+
+byte rowPins[5] = {9,8,7,6,5};
+byte colPins[4] = {4,3,2,A0};
+
+Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, 5, 4);
+
+// var
+String expr = "";
+
+// math
+float calculate(String s) {
+  float num = 0;
+  float result = 0;
+  char op = '+';
+
+  for (int i = 0; i < s.length(); i++) {
+    char c = s[i];
+
+    if (isdigit(c) || c == '.') {
+      num = num * 10 + (c - '0');
+    } else {
+      if(c == '√') num = sqrt(num);
+      if(c == 's') num = sin(num * PI / 180.0);
+      if(c == 'c') num = cos(num * PI / 180.0);
+      if(c == 't') num = tan(num * PI / 180.0);
+      if(c == '%') num = num / 100.0;
+
+      switch (op) {
+        case '+': result += num; break;
+        case '-': result -= num; break;
+        case '*': result *= num; break;
+        case '/': if (num != 0) result /= num; break;
+      }
+      op = c;
+      num = 0;
+    }
+  }
+
+  switch (op) {
+    case '+': result += num; break;
+    case '-': result -= num; break;
+    case '*': result *= num; break;
+    case '/': if (num != 0) result /= num; break;
+  }
+
+  return result;
+}
+
+void setup() {
+  lcd.init();
+  lcd.backlight();
+
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("nCalc 2");
+  lcd.setCursor(0,1);
+  lcd.print("nCalc 2");
+  delay(1600);
+  lcd.clear();
+}
+
+// loop
+void loop() {
+  char key = keypad.getKey();
+
+  if (key) {
+    if (key == 'C') {
+      expr = "";
+      lcd.clear();
+      return;
+    }
+
+    if (key == '=') {
+      float r = calculate(expr);
+      lcd.clear();
+      lcd.print("= ");
+      lcd.print(r);
+      expr = "";
+      return;
+    }
+
+    expr += key;
+    lcd.clear();
+    lcd.print(expr);
+  }
+}
