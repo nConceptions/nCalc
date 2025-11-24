@@ -1,0 +1,379 @@
+// nC_V
+// nLicensing
+
+// This Version is built to be human friendly and understandable
+// Almost everything is documented ! :)
+
+// KEYNOTE: Parser Update
+
+
+#include <Keypad.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <math.h>
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// Settings variables
+int brightness = 5;        // 0–5
+int textSize = 1;          // 1=normal  2=large
+bool whiteText = true;
+
+// ALL NEW
+bool cursorBlink = true;   
+bool autoClear = true;     
+bool angleModeDeg = true;  // DEG=true, RAD=false
+
+
+// Cursor variables
+unsigned long lastBlink = 0;
+bool cursorVisible = true;
+
+
+char keys[6][4] = {
+  {'s','c','t','r'},
+  {'S','D','(',')'},
+  {'1','2','3','+'},
+  {'4','5','6','-'},
+  {'7','8','9','*'},
+  {'0','C','=','/'},
+};
+byte rowPins[6] = {10,9,8,7,6,5};
+byte colPins[4] = {4,3,2,A0};
+Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, 6, 4);
+String expr = "";
+
+struct Token {
+  char type;
+  float value;
+  char op; 
+  char func;
+};
+
+#define MAXTOKENS 48 // max amount of numbers nC can handle
+Token tokens[MAXTOKENS];
+int tokenCount = 0;
+
+void tokenize(String s){
+  tokenCount = 0;
+
+  for(int i=0; i < s.length(); i++){
+    char c = s[i];
+
+    // number
+    if(isDigit(c)){
+      float num = 0;
+      bool hasDot = false;
+      float decimal = 0.1;
+
+      while(i < s.length() && (isDigit(s[i]) || s[i] == '.')){
+        if(s[i] == '.'){
+          hasDot = true;
+        } else {
+          if(!hasDot){
+            num = num * 10 + (s[i] - '0');
+          } else {
+            num += (s[i] - '0') * decimal;
+            decimal *= 0.1;
+          }
+        }
+        i++;
+      }
+      i--;
+
+      tokens[tokenCount++] = { 'n', num, 0, 0 };
+      continue;
+    }
+
+    // Operators
+    if(c=='+'||c=='-'||c=='*'||c=='/'||c=='%'||c=='^'){
+      tokens[tokenCount++] = { 'o', 0, c, 0 };
+      continue;
+    }
+
+    // square root symbole
+    if(c=='√'){
+      tokens[tokenCount++] = { 'f', 0, 0, 'r' };
+      continue;
+    }
+
+    // functions
+    if(c=='s' || c=='c' || c=='t' || c=='r'){
+      tokens[tokenCount++] = { 'f', 0, 0, c };
+      continue;
+    }
+
+    // parentheses
+    if(c=='(' || c==')'){
+      tokens[tokenCount++] = { 'p', 0, 0, c };
+      continue;
+    }
+  }
+}
+
+float parseFactor();
+
+float parsePower(){
+  float val = parseFactor();
+
+  while(pos < tokenCount && tokens[pos].type=='o' && tokens[pos].op=='^'){
+    pos++;
+    float right = parseFactor();
+    val = pow(val, right);
+  }
+
+  return val;
+}
+
+int pos = 0;
+float parseExpression();
+
+float parseFactor(){
+  if(pos >= tokenCount) return 0;
+
+  Token t = tokens[pos];
+
+  // number
+  if(t.type == 'n'){
+    pos++;
+    return t.value;
+  }
+
+  // unary -x
+  if(t.type=='o' && t.op=='-'){
+    pos++;
+    return -parseFactor();
+  }
+
+  // function
+  if(t.type=='f'){
+    pos++;
+    float val = parseFactor();
+    switch(t.func){
+      case 's': return sin(val * PI / 180.0);
+      case 'c': return cos(val * PI / 180.0);
+      case 't': return tan(val * PI / 180.0);
+      case 'r': return sqrt(val); // √
+    }
+  }
+
+  // parentheses
+  if(t.type=='p' && t.func=='('){
+    pos++;
+    float val = parseExpression();
+
+    if(pos < tokenCount && tokens[pos].type=='p' && tokens[pos].func==')'){
+      pos++;
+      return val;
+    }
+
+    return NAN; // missing ')'
+  }
+
+  return 0;
+}
+
+float parseTerm(){
+  float val = parsePower();
+
+  while(pos < tokenCount && tokens[pos].type=='o' &&
+       (tokens[pos].op=='*' || tokens[pos].op=='/' || tokens[pos].op=='%')){
+    
+    char op = tokens[pos].op;
+    pos++;
+    float right = parsePower();
+
+    switch(op){
+      case '*': val *= right; break;
+      case '/': if(right != 0) val /= right; break;
+      case '%': val = fmod(val, right); break;
+    }
+  }
+
+  return val;
+}
+
+float parseExpression(){
+  float val = parseTerm();
+  while(pos<tokenCount && tokens[pos].type=='o' && (tokens[pos].op=='+' || tokens[pos].op=='-')){
+    char op = tokens[pos].op;
+    pos++;
+    float right = parseTerm();
+    switch(op){
+      case '+': val += right; break;
+      case '-': val -= right; break;
+    }
+  }
+  return val;
+}
+
+float evaluate(String s){
+  tokenize(s);
+  pos = 0;
+  return parseExpression();
+}
+
+void updateDisplay(){
+  if(whiteText){
+    lcd.backlight();
+  } else {
+    lcd.noBacklight();
+  }
+}
+
+// Settingsmenu
+
+void showSettings(){
+  int option = 0;
+  const int maxOption = 6;
+  bool inMenu = true;
+
+  while(inMenu){
+    lcd.clear();
+    lcd.setCursor(0,0);
+
+    switch(option){
+      case 0: lcd.print(">Text Color"); break;
+      case 1: lcd.print(">Brightness"); break;
+      case 2: lcd.print(">Text Size"); break;
+      case 3: lcd.print(">Cursor Blink"); break;
+      case 4: lcd.print(">Auto-Clear"); break;
+      case 5: lcd.print(">Angle Mode"); break;
+      case 6: lcd.print(">Exit Settings"); break;
+    }
+
+    lcd.setCursor(0,1);
+    switch(option){
+      case 0: lcd.print(whiteText ? " White" : " Black"); break;
+      case 1: lcd.print(String(" ") + brightness); break;
+      case 2: lcd.print(textSize == 1 ? " Normal" : " Large"); break;
+      case 3: lcd.print(cursorBlink ? " On" : " Off"); break;
+      case 4: lcd.print(autoClear ? " On" : " Off"); break;
+      case 5: lcd.print(angleModeDeg ? " DEG" : " RAD"); break;
+      case 6: lcd.print(" = to exit"); break;
+    }
+
+    // Input warten
+    delay(150);
+    char key = 0;
+    while(key == 0){
+      key = keypad.getKey();
+      delay(10);
+    }
+
+    // Navigation
+    if(key == '+'){
+      option++;
+      if(option > maxOption) option = 0;
+    }
+    if(key == '-'){
+      option--;
+      if(option < 0) option = maxOption;
+    }
+
+    // Toggle oder ändern
+    if(key == '='){
+      switch(option){
+        case 0: whiteText = !whiteText; updateDisplay(); break;
+        case 1: brightness = (brightness + 1) % 6; /* add PWM here */ break;
+        case 2: textSize = (textSize == 1 ? 2 : 1); break;
+        case 3: cursorBlink = !cursorBlink; break;
+        case 4: autoClear = !autoClear; break;
+        case 5: angleModeDeg = !angleModeDeg; break;
+        case 6: inMenu = false; break;
+      }
+    }
+
+    // Exit mit C
+    if(key == 'C'){
+      inMenu = false;
+    }
+  }
+
+  lcd.clear();
+  lcd.print("Settings saved");
+  delay(600);
+  lcd.clear();
+}
+
+// startup screen
+
+void setup() {
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  
+  for(int i = 0; i < 10; i++) {
+    lcd.backlight();
+    delay(i * 10);
+    lcd.noBacklight();
+    delay(100 - (i * 10));
+  }
+  lcd.backlight();
+  
+  // This is self-explanatory :)
+
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("nCalc V");
+  lcd.setCursor(0,1);
+  lcd.print("<V loading... V>");
+  delay(1200);
+  lcd.clear();
+  
+  updateDisplay();
+}
+
+// loop
+
+void loop() {
+  char key = keypad.getKey();
+  if (key) {
+    if (key == 'S') {
+      showSettings();
+      return;
+    }
+    if (key == 'C') {
+      expr = "";
+      lcd.clear();
+      return;
+    }
+    if (key == 'D') {
+      if (expr.length() > 0) {
+        expr.remove(expr.length() - 1);
+      }
+      lcd.clear();
+      lcd.print(expr);
+      return;
+    }
+    if (key == '=') {
+      float r = evaluate(expr);
+      lcd.clear();
+      lcd.print("= ");
+      lcd.print(r);
+      expr = "";
+      return;
+    }
+    expr += key;
+    lcd.clear();
+    lcd.print(expr);
+  }
+
+  blinkCursor();
+}
+void blinkCursor() {
+  static unsigned long lastToggle = 0;
+  unsigned long now = millis();
+
+  if (now - lastToggle >= 500) {   // Blink every 0.5 secs
+    lastToggle = now;
+    cursorVisible = !cursorVisible;
+
+    lcd.setCursor(expr.length(), 0);  // Cursor to end
+
+    if (cursorVisible) {
+      lcd.print("_");  // Hides Cursor
+    } else {
+      lcd.print(" ");  // Shows Cursor
+    }
+  }
+}
