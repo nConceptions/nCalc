@@ -1,0 +1,97 @@
+#include <Keypad.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// display
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// keypaad
+char keys[4][4] = {
+  {'1','2','3','+'},
+  {'4','5','6','-'},
+  {'7','8','9','*'},
+  {'C','0','=','/'}
+};
+
+byte rowPins[4] = {9,8,7,6};
+byte colPins[4] = {5,4,3,2};
+
+Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, 4, 4);
+
+// var
+String expr = "";
+
+// math
+float calculate(String s) {
+  float num = 0;
+  float result = 0;
+  char op = '+';
+
+  for (int i = 0; i < s.length(); i++) {
+    char c = s[i];
+
+    if (isdigit(c)) {
+      num = num * 10 + (c - '0');
+    } else {
+      switch (op) {
+        case '+': result += num; break;
+        case '-': result -= num; break;
+        case '*': result *= num; break;
+        case '/': if (num != 0) result /= num; break;
+      }
+      op = c;
+      num = 0;
+    }
+  }
+
+  // evaluate last number
+  switch (op) {
+    case '+': result += num; break;
+    case '-': result -= num; break;
+    case '*': result *= num; break;
+    case '/': if (num != 0) result /= num; break;
+  }
+
+  return result;
+}
+
+// setup
+void setup() {
+  lcd.init();
+  lcd.backlight();
+
+  // startup screen
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("nCalc");
+  lcd.setCursor(0,1);
+  lcd.print("starting...");
+  delay(1000);
+  lcd.clear();
+}
+
+// loop
+void loop() {
+  char key = keypad.getKey();
+
+  if (key) {
+    if (key == 'C') {
+      expr = "";
+      lcd.clear();
+      return;
+    }
+
+    if (key == '=') {
+      float r = calculate(expr);
+      lcd.clear();
+      lcd.print("= ");
+      lcd.print(r);
+      expr = "";
+      return;
+    }
+
+    expr += key;
+    lcd.clear();
+    lcd.print(expr);
+  }
+}
