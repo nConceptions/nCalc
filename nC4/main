@@ -1,0 +1,233 @@
+// nC4
+// CC0 1.0 Universal
+
+
+// This Version is built to be human friendly and understandable
+
+
+#include <Keypad.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <math.h>
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// Settings variables
+int textSize = 1; // 1 = normal, 2 = large
+bool whiteText = true; // true = white text, false = black text
+
+char keys[6][4] = {
+  {'S','E','T','X'}, // Settings row
+  {'1','2','3','+'},
+  {'4','5','6','-'},
+  {'7','8','9','*'},
+  {'C','0','=','/'},
+  {'s','c','t','r'} // nCalcV introduced r for better readability
+};
+byte rowPins[6] = {10,9,8,7,6,5};
+byte colPins[4] = {4,3,2,A0};
+Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, 6, 4);
+String expr = "";
+
+struct Token {
+  char type;
+  float value;
+  char op; 
+  char func;
+};
+
+#define MAXTOKENS 32
+Token tokens[MAXTOKENS];
+int tokenCount = 0;
+
+void tokenize(String s){
+  tokenCount = 0;
+  for(int i=0;i<s.length();i++){
+    char c = s[i];
+    if(isDigit(c)){
+      float num = c - '0';
+      while(i+1<s.length() && (isDigit(s[i+1]) || s[i+1]=='.')){
+        i++;
+        if(s[i]!='.') num = num*10 + (s[i]-'0');
+      }
+      tokens[tokenCount++] = { 'n', num, 0, 0 };
+    } else if(c=='+'||c=='-'||c=='*'||c=='/'||c=='%'){
+      tokens[tokenCount++] = { 'o', 0, c, 0 };
+    } else if(c=='s'||c=='c'||c=='t'||c=='r'){
+      tokens[tokenCount++] = { 'f', 0, 0, c };
+    } else if(c=='(' || c==')'){
+      tokens[tokenCount++] = { 'p', 0, 0, c };
+    }
+  }
+}
+
+int pos = 0;
+float parseExpression();
+
+float parseFactor(){
+  if(pos>=tokenCount) return 0;
+  Token t = tokens[pos];
+  if(t.type=='n'){
+    pos++;
+    return t.value;
+  }
+  if(t.type=='f'){
+    pos++;
+    float val = parseFactor();
+    switch(t.func){
+      case 's': return sin(val*PI/180.0);
+      case 'c': return cos(val*PI/180.0);
+      case 't': return tan(val*PI/180.0);
+      case 'r': return sqrt(val);
+    }
+  }
+  if(t.type=='o' && t.op=='-'){
+    pos++;
+    return -parseFactor();
+  }
+  if(t.type=='p' && t.func=='('){
+    pos++;
+    float val = parseExpression();
+    if(pos<tokenCount && tokens[pos].type=='p' && tokens[pos].func==')') pos++;
+    return val;
+  }
+  return 0;
+}
+
+float parseTerm(){
+  float val = parseFactor();
+  while(pos<tokenCount && tokens[pos].type=='o' && (tokens[pos].op=='*' || tokens[pos].op=='/' || tokens[pos].op=='%')){
+    char op = tokens[pos].op;
+    pos++;
+    float right = parseFactor();
+    switch(op){
+      case '*': val *= right; break;
+      case '/': if(right!=0) val /= right; break;
+      case '%': val = val * right / 100; break;
+    }
+  }
+  return val;
+}
+
+float parseExpression(){
+  float val = parseTerm();
+  while(pos<tokenCount && tokens[pos].type=='o' && (tokens[pos].op=='+' || tokens[pos].op=='-')){
+    char op = tokens[pos].op;
+    pos++;
+    float right = parseTerm();
+    switch(op){
+      case '+': val += right; break;
+      case '-': val -= right; break;
+    }
+  }
+  return val;
+}
+
+float evaluate(String s){
+  tokenize(s);
+  pos = 0;
+  return parseExpression();
+}
+
+void updateDisplay(){
+  if(whiteText){
+    lcd.backlight();
+  } else {
+    lcd.noBacklight();
+  }
+}
+
+void showSettings(){
+  int menuOption = 0;
+  bool inSettings = true;
+  
+  while(inSettings){
+    lcd.clear();
+    
+    if(menuOption == 0){
+      lcd.setCursor(0,0);
+      lcd.print(">Text Color");
+      lcd.setCursor(0,1);
+      lcd.print(whiteText ? " White" : " Black");
+    } else if(menuOption == 1){
+      lcd.setCursor(0,0);
+      lcd.print(">Exit Settings");
+      lcd.setCursor(0,1);
+      lcd.print(" Press =");
+    }
+    
+    delay(200);
+    char key = 0;
+    while(key == 0){
+      key = keypad.getKey();
+      delay(10);
+    }
+    
+    if(key == '+' || key == '-'){
+      menuOption = (menuOption == 0) ? 1 : 0;
+    } else if(key == '='){
+      if(menuOption == 0){
+        whiteText = !whiteText;
+        updateDisplay();
+      } else if(menuOption == 1){
+        inSettings = false;
+      }
+    } else if(key == 'C'){
+      inSettings = false;
+    }
+  }
+  
+  lcd.clear();
+  lcd.print("Settings saved");
+  delay(1000);
+  lcd.clear();
+}
+
+void setup() {
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  
+  for(int i = 0; i < 10; i++) {
+    lcd.backlight();
+    delay(i * 10);
+    lcd.noBacklight();
+    delay(100 - (i * 10));
+  }
+  lcd.backlight();
+  
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("nCalc 4");
+  lcd.setCursor(0,1);
+  lcd.print(">> loading... <<");
+  delay(1300);
+  lcd.clear();
+  
+  updateDisplay();
+}
+
+void loop() {
+  char key = keypad.getKey();
+  if (key) {
+    if (key == 'S') {
+      showSettings();
+      return;
+    }
+    if (key == 'C') {
+      expr = "";
+      lcd.clear();
+      return;
+    }
+    if (key == '=') {
+      float r = evaluate(expr);
+      lcd.clear();
+      lcd.print("= ");
+      lcd.print(r);
+      expr = "";
+      return;
+    }
+    expr += key;
+    lcd.clear();
+    lcd.print(expr);
+  }
+}
