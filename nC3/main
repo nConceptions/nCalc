@@ -1,0 +1,164 @@
+// nC3
+// CC0 1.0 Universal
+
+#include <Keypad.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <math.h>
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+char keys[5][4] = {
+  {'1','2','3','+'},
+  {'4','5','6','-'},
+  {'7','8','9','*'},
+  {'C','0','=','/'},
+  {'s','c','t','√'}
+};
+
+byte rowPins[5] = {9,8,7,6,5};
+byte colPins[4] = {4,3,2,A0};
+
+Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, 5, 4);
+
+String expr = "";
+
+struct Token {
+  char type; // 'n' = number, 'o' = operator, 'f' = function, 'p' = parenthesis
+  float value;
+  char op; 
+  char func;
+};
+
+#define MAXTOKENS 32
+Token tokens[MAXTOKENS];
+int tokenCount = 0;
+
+void tokenize(String s){
+  tokenCount = 0;
+  for(int i=0;i<s.length();i++){
+    char c = s[i];
+    if(isDigit(c)){
+      float num = c - '0';
+      while(i+1<s.length() && (isDigit(s[i+1]) || s[i+1]=='.')){
+        i++;
+        num = num*10 + (s[i]-'0'); // einfache float, keine Dezimalstellen
+      }
+      tokens[tokenCount++] = { 'n', num, 0, 0 };
+    } else if(c=='+'||c=='-'||c=='*'||c=='/'||c=='%'){
+      tokens[tokenCount++] = { 'o', 0, c, 0 };
+    } else if(c=='s'||c=='c'||c=='t'||c=='√'){
+      tokens[tokenCount++] = { 'f', 0, 0, c };
+    } else if(c=='(' || c==')'){
+      tokens[tokenCount++] = { 'p', 0, 0, c };
+    }
+  }
+}
+
+int pos = 0;
+
+float parseExpression();
+
+float parseFactor(){
+  if(pos>=tokenCount) return 0;
+  Token t = tokens[pos];
+
+  if(t.type=='n'){
+    pos++;
+    return t.value;
+  }
+  if(t.type=='f'){ // function
+    pos++;
+    float val = parseFactor();
+    switch(t.func){
+      case 's': return sin(val*PI/180.0);
+      case 'c': return cos(val*PI/180.0);
+      case 't': return tan(val*PI/180.0);
+      case '√': return sqrt(val);
+    }
+  }
+  if(t.type=='o' && t.op=='-'){ // unary minus
+    pos++;
+    return -parseFactor();
+  }
+  if(t.type=='p' && t.func=='('){
+    pos++;
+    float val = parseExpression();
+    if(pos<tokenCount && tokens[pos].type=='p' && tokens[pos].func==')') pos++;
+    return val;
+  }
+  return 0;
+}
+
+float parseTerm(){
+  float val = parseFactor();
+  while(pos<tokenCount && tokens[pos].type=='o' && (tokens[pos].op=='*' || tokens[pos].op=='/' || tokens[pos].op=='%')){
+    char op = tokens[pos].op;
+    pos++;
+    float right = parseFactor();
+    switch(op){
+      case '*': val *= right; break;
+      case '/': if(right!=0) val /= right; break;
+      case '%': val = val * right / 100; break;
+    }
+  }
+  return val;
+}
+
+float parseExpression(){
+  float val = parseTerm();
+  while(pos<tokenCount && tokens[pos].type=='o' && (tokens[pos].op=='+' || tokens[pos].op=='-')){
+    char op = tokens[pos].op;
+    pos++;
+    float right = parseTerm();
+    switch(op){
+      case '+': val += right; break;
+      case '-': val -= right; break;
+    }
+  }
+  return val;
+}
+
+float evaluate(String s){
+  tokenize(s);
+  pos = 0;
+  return parseExpression();
+}
+
+void setup() {
+  lcd.init();
+  lcd.backlight();
+
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print("nCalc 3");
+  lcd.setCursor(0,1);
+  lcd.print("nCalc 3");
+  delay(1450);
+  lcd.clear();
+}
+
+void loop() {
+  char key = keypad.getKey();
+
+  if (key) {
+    if (key == 'C') {
+      expr = "";
+      lcd.clear();
+      return;
+    }
+
+    if (key == '=') {
+      float r = evaluate(expr);
+      lcd.clear();
+      lcd.print("= ");
+      lcd.print(r);
+      expr = "";
+      return;
+    }
+
+    expr += key;
+    lcd.clear();
+    lcd.print(expr);
+  }
+}
